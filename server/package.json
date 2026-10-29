@@ -1,0 +1,32 @@
+{
+  "name": "outdoor-adventure-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.5",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "description": "1. Install Node.js 18+. 2. `cd server && npm install` 3. Copy `.env.example` to `.env` and configure MongoDB Atlas, `CLIENT_URL`, `JWT_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD_HASH`. For sandbox payments also configure the provider variables in `server/.env.example`: SSLCOMMERZ for Bangladesh BDT bookings and Verifone Checkout for international USD bookings, plus `PAYMENT_CALLBACK_BASE_URL` and `USD_TO_BDT_RATE`. 4. Generate a bcrypt password hash with `node -e \"require('bcryptjs').hash('2325@admin', 12).then(console.log)\"` from this folder. Put the output in `ADMIN_PASSWORD_HASH`; do not put your real password in source control. 5. Run `npm run dev` for development or `npm start` in production.",
+  "main": "server.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
