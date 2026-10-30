@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const bookingSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   customerName: { type: String, required: true, trim: true, maxlength: 100 },
   email: { type: String, required: true, trim: true, lowercase: true, maxlength: 254 },
   phone: { type: String, required: true, trim: true, maxlength: 30 },

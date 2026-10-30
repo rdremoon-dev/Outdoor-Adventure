@@ -85,6 +85,7 @@ app.get('/api/health', (req, res) =>
 );
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/bookings', require('./routes/bookingRoutes'));
+app.use('/api/tips', require('./routes/tipRoutes'));
 app.use(
   '/api/payments',
   rateLimit({

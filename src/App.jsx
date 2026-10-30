@@ -39,6 +39,7 @@ import Contact from './component/page/Contact';
 import Services from './component/page/Services';
 import Footer from './component/Footer';
 import Admin from './component/page/Admin';
+import UserDashboard from './component/page/UserDashboard';
 import { apiRequest } from './lib/api';
 
 const PALETTES = {
@@ -200,7 +201,11 @@ const FAQS = [
 ];
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState(() => window.location.pathname === '/admin' ? 'admin' : 'home');
+  const [currentPage, setCurrentPage] = useState(() => {
+    if (window.location.pathname === '/admin') return 'admin';
+    if (window.location.pathname === '/account') return 'account';
+    return 'home';
+  });
   const [theme, setTheme] = useState('rose');
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isAutoplay, setIsAutoplay] = useState(true);
@@ -268,10 +273,18 @@ export default function App() {
     try {
       const result = await apiRequest('/api/bookings', {
         method: 'POST',
+        headers: sessionStorage.getItem('outdoor_user_token')
+          ? { Authorization: `Bearer ${sessionStorage.getItem('outdoor_user_token')}` }
+          : {},
         body: JSON.stringify(bookingForm),
       });
       if (result.paymentEnabled) {
-        const checkout = await apiRequest(`/api/payments/checkout/${result.bookingId}`, { method: 'POST', body: JSON.stringify({}) });
+        const userToken = sessionStorage.getItem('outdoor_user_token');
+        const checkout = await apiRequest(`/api/payments/checkout/${result.bookingId}`, {
+          method: 'POST',
+          headers: userToken ? { Authorization: `Bearer ${userToken}` } : {},
+          body: JSON.stringify({}),
+        });
         window.location.assign(checkout.checkoutUrl);
         return;
       }
@@ -380,11 +393,13 @@ export default function App() {
         mobileMenuOpen={mobileMenuOpen}
         setMobileMenuOpen={setMobileMenuOpen}
         onBook={() => openBooking()}
+        onAccount={() => setCurrentPage('account')}
       />
 
       {/* Main Dynamic View Content */}
       <main className="flex-grow">
         {currentPage === 'admin' && <Admin showToast={showToast} />}
+        {currentPage === 'account' && <UserDashboard showToast={showToast} />}
         {/* ================= HOME PAGE ================= */}
         {currentPage === 'home' && (
           <Home
@@ -580,7 +595,7 @@ export default function App() {
                 <div className="mt-2 flex items-center justify-between gap-3"><span className="text-sm font-bold text-slate-800">Estimated total · {bookingForm.guests} guest(s)</span><strong className="text-lg font-extrabold text-emerald-800">{new Intl.NumberFormat(undefined, { style: 'currency', currency: paymentQuote.currency, maximumFractionDigits: 2 }).format(paymentQuote.amount)}</strong></div>
                 {paymentQuote.currency === 'BDT' && <p className="mt-2 text-[10px] leading-4 text-slate-500">BDT amount uses the website's configured pricing rate (USD 1 = BDT {paymentQuote.usdToBdtRate}); gateway fees or bank conversion may apply.</p>}
                 {!paymentQuote.payable && <p className="mt-2 text-[10px] leading-4 text-rose-700">This total is outside the configured payment limits. Contact the team to arrange an approved payment method.</p>}
-                {!paymentQuote.paymentEnabled && <p className="mt-2 text-[10px] leading-4 text-amber-700">Payment gateway credentials are not configured yet. Booking requests can be received, but online checkout will remain unavailable until setup is complete.</p>}
+                {!paymentQuote.paymentEnabled && <p className="mt-2 text-[10px] leading-4 text-amber-700">{bookingForm.billingCountry === 'BD' ? 'Online payment is not configured yet. You can still submit your booking request and the team will contact you.' : 'Online payment is currently available only for Bangladesh billing. You can still submit your booking request and the team will contact you.'}</p>}
               </div>}
 
               <div>
@@ -588,7 +603,7 @@ export default function App() {
                 <textarea rows={3} maxLength={1000} placeholder="Tell us about your group or any special requirements" value={bookingForm.message} onChange={e => setBookingForm({ ...bookingForm, message: e.target.value })} className={`w-full mt-1 px-4 py-3 rounded-xl border border-slate-200 text-xs focus:ring-2 ${activeTheme.focus} focus:outline-none resize-none`} />
               </div>
               {bookingError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-xs leading-5 text-rose-700">{bookingError}</p>}
-              <p className="text-[11px] leading-5 text-slate-500">Prices are per guest. Bangladesh bookings use SSLCOMMERZ (BDT); international bookings use Verifone hosted checkout (USD), when configured and approved for your merchant account. Payment does not confirm trip availability; our team must still approve your booking.</p>
+              <p className="text-[11px] leading-5 text-slate-500">Prices are per guest. Online checkout through SSLCOMMERZ (BDT) is available for Bangladesh billing only. International customers can submit a booking request and the team will contact them about payment. Payment does not confirm trip availability; our team must still approve your booking.</p>
               <button
                 type="submit"
                 disabled={bookingSubmitting || (Boolean(paymentQuote?.paymentEnabled) && paymentQuote?.payable === false)}

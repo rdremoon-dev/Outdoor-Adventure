@@ -24,7 +24,7 @@
   "engines": {
     "node": ">=20"
   },
-  "description": "1. Install Node.js 18+. 2. `cd server && npm install` 3. Copy `.env.example` to `.env` and configure MongoDB Atlas, `CLIENT_URL`, `JWT_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD_HASH`. For sandbox payments also configure the provider variables in `server/.env.example`: SSLCOMMERZ for Bangladesh BDT bookings and Verifone Checkout for international USD bookings, plus `PAYMENT_CALLBACK_BASE_URL` and `USD_TO_BDT_RATE`. 4. Generate a bcrypt password hash with `node -e \"require('bcryptjs').hash('2325@admin', 12).then(console.log)\"` from this folder. Put the output in `ADMIN_PASSWORD_HASH`; do not put your real password in source control. 5. Run `npm run dev` for development or `npm start` in production.",
+  "description": "1. Install Node.js 18+. 2. `cd server && npm install` 3. Configure MongoDB Atlas, `CLIENT_URL`, `JWT_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD_HASH`. For Bangladesh sandbox payments, configure SSLCOMMERZ credentials, `PAYMENT_CALLBACK_BASE_URL`, and `USD_TO_BDT_RATE`. 4. Generate a bcrypt password hash with `node -e \"require('bcryptjs').hash('2325@admin', 12).then(console.log)\"` from this folder. Put the output in `ADMIN_PASSWORD_HASH`; do not put your real password in source control. 5. Run `npm run dev` for development or `npm start` in production.",
   "main": "server.js",
   "keywords": [],
   "author": "",

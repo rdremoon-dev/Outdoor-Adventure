@@ -5,6 +5,7 @@ dns.setServers(['8.8.8.8', '8.8.4.4']);
 const express = require('express');
 const Booking = require('../models/Booking');
 const adminAuth = require('../middleware/adminAuth');
+const userAuth = require('../middleware/userAuth');
 
 const router = express.Router();
 const adventures = new Set([
@@ -15,7 +16,7 @@ const adventures = new Set([
 ]);
 
 // Public endpoint: creates a booking request. It does not confirm availability.
-router.post('/', async (req, res, next) => {
+router.post('/', userAuth.optional, async (req, res, next) => {
   try {
     const {
       name,
@@ -82,6 +83,7 @@ router.post('/', async (req, res, next) => {
         .json({ message: 'Booking date must be a valid future date.' });
     }
     const booking = await Booking.create({
+      userId: req.user?.id || null,
       customerName: name.trim(),
       email: email.trim().toLowerCase(),
       phone: phone.trim(),
@@ -117,13 +119,9 @@ router.post('/', async (req, res, next) => {
         paymentEnabled: Boolean(
           process.env.PAYMENT_CALLBACK_BASE_URL &&
           process.env.CLIENT_URL &&
-          (billingCountry === 'BD'
-            ? process.env.SSLCOMMERZ_STORE_ID &&
-              process.env.SSLCOMMERZ_STORE_PASSWORD
-            : process.env.VERIFONE_API_USER_ID &&
-              process.env.VERIFONE_API_KEY &&
-              process.env.VERIFONE_ENTITY_ID &&
-              process.env.VERIFONE_PAYMENT_CONTRACT_ID),
+          billingCountry === 'BD' &&
+          process.env.SSLCOMMERZ_STORE_ID &&
+          process.env.SSLCOMMERZ_STORE_PASSWORD,
         ),
       });
   } catch (err) {
@@ -132,6 +130,18 @@ router.post('/', async (req, res, next) => {
 });
 
 // Protected admin endpoints
+router.get('/mine', userAuth.required, async (req, res, next) => {
+  try {
+    const bookings = await Booking.find({ userId: req.user.id })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+    return res.json({ bookings });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 router.get('/', adminAuth, async (req, res, next) => {
   try {
     const bookings = await Booking.find()

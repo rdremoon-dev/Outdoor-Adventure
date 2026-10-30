@@ -1,137 +1,548 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiRequest, API_URL } from '../../lib/api';
-import { io } from 'socket.io-client';
 import {
-  ShieldCheck, LogOut, RefreshCw, CalendarDays, Users, Mail, Phone, Clock3,
-  Bell, Radio, Search, Download, ChevronDown, X,
-  CircleDollarSign, TrendingUp, CalendarCheck2, AlertCircle, SlidersHorizontal,
-  MessageSquareText, ArrowUpRight
+  AlertCircle,
+  Bell,
+  CalendarDays,
+  CalendarCheck2,
+  CheckCircle2,
+  ChevronDown,
+  CircleDollarSign,
+  Clock3,
+  Download,
+  LayoutDashboard,
+  LogOut,
+  Mail,
+  MessageSquareText,
+  Pencil,
+  Phone,
+  Plus,
+  Radio,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+  UserRound,
+  Users,
+  X,
 } from 'lucide-react';
+import { io } from 'socket.io-client';
+import { API_URL, apiRequest } from '../../lib/api';
 
-const statusStyles = {
-  pending: 'bg-amber-50 text-amber-700 ring-amber-200',
-  confirmed: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  cancelled: 'bg-rose-50 text-rose-700 ring-rose-200',
+const adminTokenKey = 'outdoor_admin_token';
+const adventures = [
+  'Backpacking Trips',
+  'Family Hiking Trips',
+  'Water Sports & Kayaking',
+  'Winter Alpine Sports',
+];
+const inputClass =
+  'mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50';
+const statusClass = {
+  pending: 'bg-amber-50 text-amber-800',
+  confirmed: 'bg-emerald-50 text-emerald-800',
+  cancelled: 'bg-rose-50 text-rose-800',
 };
-const adventures = ['Backpacking Trips', 'Family Hiking Trips', 'Water Sports & Kayaking', 'Winter Alpine Sports'];
-const paymentStyles = { paid: 'bg-emerald-50 text-emerald-700 ring-emerald-200', pending: 'bg-amber-50 text-amber-700 ring-amber-200', failed: 'bg-rose-50 text-rose-700 ring-rose-200', cancelled: 'bg-slate-100 text-slate-600 ring-slate-200', review: 'bg-orange-50 text-orange-700 ring-orange-200', not_configured: 'bg-slate-100 text-slate-500 ring-slate-200' };
-const moneyLabel = b => b?.paymentAmount != null ? new Intl.NumberFormat(undefined, { style: 'currency', currency: b.paymentCurrency || 'USD', maximumFractionDigits: 2 }).format(b.paymentAmount) : '—';
-const dateLabel = value => value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set';
-const dateTimeLabel = value => value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
-
-function StatCard({ label, value, note, icon: Icon, tone = 'emerald' }) {
-  const tones = {
-    emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
-    amber: 'bg-amber-50 text-amber-700 ring-amber-100',
-    rose: 'bg-rose-50 text-rose-700 ring-rose-100',
-    blue: 'bg-sky-50 text-sky-700 ring-sky-100',
-  };
-  return <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-    <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-slate-500">{label}</p><p className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900">{value}</p></div><span className={`flex h-11 w-11 items-center justify-center rounded-xl ring-1 ${tones[tone]}`}><Icon className="h-5 w-5" /></span></div>
-    <p className="mt-3 text-xs text-slate-500">{note}</p>
-  </div>;
-}
+const dateLabel = value =>
+  value
+    ? new Date(value).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : 'Not set';
 
 function exportCsv(rows) {
-  const columns = ['Reference', 'Customer', 'Email', 'Phone', 'Adventure', 'Date', 'Guests', 'Booking status', 'Payment status', 'Payment amount', 'Currency', 'Transaction ID', 'Requested at', 'Message'];
-  const values = rows.map(b => [String(b._id || '').slice(-8).toUpperCase(), b.customerName, b.email, b.phone, b.adventure, b.bookingDate ? new Date(b.bookingDate).toISOString().slice(0, 10) : '', b.guests, b.status, b.paymentStatus || 'not_configured', b.paymentAmount ?? '', b.paymentCurrency || '', b.transactionId || '', b.createdAt ? new Date(b.createdAt).toISOString() : '', b.message || '']);
-  const csv = [columns, ...values].map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const columns = [
+    'Reference', 'Customer', 'Email', 'Phone', 'Adventure', 'Date', 'Guests',
+    'Booking status', 'Payment status', 'Payment amount', 'Currency',
+    'Transaction ID', 'Requested at', 'Message',
+  ];
+  const values = rows.map(booking => [
+    String(booking._id || '').slice(-8).toUpperCase(),
+    booking.customerName,
+    booking.email,
+    booking.phone,
+    booking.adventure,
+    booking.bookingDate ? new Date(booking.bookingDate).toISOString().slice(0, 10) : '',
+    booking.guests,
+    booking.status,
+    booking.paymentStatus || 'not_configured',
+    booking.paymentAmount ?? '',
+    booking.paymentCurrency || '',
+    booking.transactionId || '',
+    booking.createdAt ? new Date(booking.createdAt).toISOString() : '',
+    booking.message || '',
+  ]);
+  const csv = [columns, ...values]
+    .map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
   const blob = new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob); const a = document.createElement('a');
-  a.href = url; a.download = `outdoor-adventure-bookings-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `outdoor-adventure-bookings-${new Date().toISOString().slice(0, 10)}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function Stat({ icon: Icon, label, value, note }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm text-slate-500">{label}</p>
+          <p className="mt-2 text-3xl font-extrabold text-slate-900">{value}</p>
+        </div>
+        <span className="rounded-xl bg-emerald-50 p-3 text-emerald-700">
+          <Icon className="h-5 w-5" />
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-slate-500">{note}</p>
+    </div>
+  );
 }
 
 export default function Admin({ showToast }) {
-  const [token, setToken] = useState(() => sessionStorage.getItem('outdoor_admin_token') || '');
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
-  const [bookings, setBookings] = useState([]); const [filter, setFilter] = useState('all');
-  const [query, setQuery] = useState(''); const [adventureFilter, setAdventureFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('all'); const [sort, setSort] = useState('newest');
-  const [selected, setSelected] = useState(null); const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(''); const [liveConnected, setLiveConnected] = useState(false);
-  const [newBookingCount, setNewBookingCount] = useState(0); const showToastRef = useRef(showToast);
-  useEffect(() => { showToastRef.current = showToast; }, [showToast]);
+  const [token, setToken] = useState(() => sessionStorage.getItem(adminTokenKey) || '');
+  const [section, setSection] = useState('bookings');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [bookings, setBookings] = useState([]);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [adventureFilter, setAdventureFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [sort, setSort] = useState('newest');
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [newBookingCount, setNewBookingCount] = useState(0);
+  const [tips, setTips] = useState([]);
+  const [tipForm, setTipForm] = useState({
+    title: '',
+    description: '',
+    category: 'General',
+    active: true,
+  });
+  const [editingTip, setEditingTip] = useState('');
+  const [profile, setProfile] = useState({ email: '', name: '', phone: '' });
+  const [loading, setLoading] = useState(false);
+  const [liveConnected, setLiveConnected] = useState(false);
+  const [error, setError] = useState('');
+  const toastRef = useRef(showToast);
+  useEffect(() => {
+    toastRef.current = showToast;
+  }, [showToast]);
 
-  const loadBookings = useCallback(async (authToken = token, quiet = false) => {
+  const loadBookings = useCallback(async (authToken = token) => {
     if (!authToken) return;
-    if (!quiet) setLoading(true); setError('');
-    try {
-      const data = await apiRequest('/api/bookings', { headers: { Authorization: `Bearer ${authToken}` } });
-      setBookings(data.bookings || []);
-    } catch (err) {
-      setError(err.message);
-      if (/session expired|login required/i.test(err.message)) { sessionStorage.removeItem('outdoor_admin_token'); setToken(''); }
-    } finally { if (!quiet) setLoading(false); }
+    const data = await apiRequest('/api/bookings', {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    setBookings(data.bookings || []);
   }, [token]);
 
-  useEffect(() => { if (token) loadBookings(token); }, [token, loadBookings]);
+  const loadTips = useCallback(async () => {
+    const data = await apiRequest('/api/tips/admin', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setTips(data.tips || []);
+  }, [token]);
+
+  const loadProfile = useCallback(async () => {
+    const data = await apiRequest('/api/auth/admin/profile', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setProfile(data.profile);
+  }, [token]);
+
   useEffect(() => {
-    if (!token) { setLiveConnected(false); return undefined; }
+    if (!token) return;
+    let active = true;
+    setLoading(true);
+    setError('');
+    Promise.all([loadBookings(token), loadTips(), loadProfile()])
+      .catch(err => {
+        if (!active) return;
+        setError(err.message);
+        if (/session expired|login required/i.test(err.message)) {
+          sessionStorage.removeItem(adminTokenKey);
+          setToken('');
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [token, loadBookings, loadTips, loadProfile]);
+
+  useEffect(() => {
+    if (!token) {
+      setLiveConnected(false);
+      return undefined;
+    }
     const socket = io(API_URL, { auth: { token }, transports: ['websocket', 'polling'] });
-    socket.on('connect', () => setLiveConnected(true)); socket.on('disconnect', () => setLiveConnected(false));
-    socket.on('connect_error', err => { setLiveConnected(false); console.warn('Live notifications unavailable:', err.message); });
-    socket.on('booking:new', notice => { setNewBookingCount(n => n + 1); showToastRef.current?.(`New booking request: ${notice.customerName} — ${notice.adventure}`); loadBookings(token, true); });
-    socket.on('booking:updated', () => loadBookings(token, true));
-    socket.on('payment:updated', () => loadBookings(token, true));
-    return () => { socket.disconnect(); setLiveConnected(false); };
+    socket.on('connect', () => setLiveConnected(true));
+    socket.on('disconnect', () => setLiveConnected(false));
+    socket.on('connect_error', err => {
+      setLiveConnected(false);
+      console.warn('Live notifications unavailable:', err.message);
+    });
+    socket.on('booking:new', notice => {
+      setNewBookingCount(count => count + 1);
+      toastRef.current?.(`New booking request: ${notice.customerName} — ${notice.adventure}`);
+      loadBookings(token).catch(err => setError(err.message));
+    });
+    socket.on('booking:updated', () => loadBookings(token).catch(err => setError(err.message)));
+    socket.on('payment:updated', () => loadBookings(token).catch(err => setError(err.message)));
+    return () => {
+      socket.disconnect();
+      setLiveConnected(false);
+    };
   }, [token, loadBookings]);
 
-  async function handleLogin(e) {
-    e.preventDefault(); setLoading(true); setError('');
-    try { const data = await apiRequest('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); sessionStorage.setItem('outdoor_admin_token', data.token); setToken(data.token); setPassword(''); }
-    catch (err) { setError(err.message); } finally { setLoading(false); }
+  async function handleLogin(event) {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const data = await apiRequest('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+      sessionStorage.setItem(adminTokenKey, data.token);
+      setToken(data.token);
+      setPassword('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }
-  async function updateStatus(id, status) {
-    try { await apiRequest(`/api/bookings/${id}/status`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ status }) }); await loadBookings(token, true); setSelected(current => current?._id === id ? { ...current, status } : current); showToast?.(`Booking ${status}.`); }
-    catch (err) { setError(err.message); }
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try {
+      await Promise.all([loadBookings(), loadTips()]);
+      setNewBookingCount(0);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }
-  function logout() { sessionStorage.removeItem('outdoor_admin_token'); setToken(''); setBookings([]); setSelected(null); }
 
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase(); const now = new Date();
-    return bookings.filter(b => {
-      if (filter !== 'all' && b.status !== filter) return false;
-      if (adventureFilter !== 'all' && b.adventure !== adventureFilter) return false;
-      if (needle && ![b.customerName, b.email, b.phone, b.adventure, b._id].some(v => String(v || '').toLowerCase().includes(needle))) return false;
-      if (dateFilter !== 'all') {
-        const d = new Date(b.bookingDate); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        if (dateFilter === 'upcoming' && (day < today || b.status === 'cancelled')) return false;
-        if (dateFilter === 'past' && day >= today) return false;
-        if (dateFilter === 'today' && day.getTime() !== today.getTime()) return false;
-      }
-      return true;
-    }).sort((a, b) => sort === 'date' ? new Date(a.bookingDate) - new Date(b.bookingDate) : sort === 'oldest' ? new Date(a.createdAt) - new Date(b.createdAt) : new Date(b.createdAt) - new Date(a.createdAt));
-  }, [bookings, filter, adventureFilter, dateFilter, query, sort]);
-  const count = status => bookings.filter(b => b.status === status).length;
-  const upcoming = bookings.filter(b => b.status !== 'cancelled' && new Date(b.bookingDate) >= new Date(new Date().setHours(0, 0, 0, 0))).length;
-  const guests = bookings.filter(b => b.status !== 'cancelled').reduce((sum, b) => sum + (Number(b.guests) || 0), 0);
-  const nextBookings = [...bookings].filter(b => b.status !== 'cancelled' && new Date(b.bookingDate) >= new Date(new Date().setHours(0, 0, 0, 0))).sort((a,b) => new Date(a.bookingDate)-new Date(b.bookingDate)).slice(0, 4);
+  async function updateBookingStatus(id, status) {
+    setError('');
+    try {
+      await apiRequest(`/api/bookings/${id}/status`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status }),
+      });
+      await loadBookings();
+      showToast?.(`Booking ${status}.`);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
-  if (!token) return <section className="relative min-h-[75vh] overflow-hidden bg-slate-950 px-4 py-16 sm:py-24"><div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-emerald-900/40 via-slate-950 to-slate-950" /><div className="relative mx-auto max-w-md rounded-3xl border border-white/10 bg-white p-7 shadow-2xl sm:p-9"><div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"><ShieldCheck className="h-7 w-7" /></div><p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">Private operations</p><h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">Welcome back.</h1><p className="mt-2 text-sm leading-6 text-slate-500">Sign in to manage reservations and keep every adventure on track.</p><form className="mt-7 space-y-4" onSubmit={handleLogin}><label className="block text-sm font-semibold text-slate-700">Admin email<input type="email" required autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100" /></label><label className="block text-sm font-semibold text-slate-700">Password<input type="password" required autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100" /></label>{error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}<button disabled={loading} className="w-full rounded-xl bg-slate-950 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60">{loading ? 'Signing in…' : 'Sign in securely'}</button></form><p className="mt-6 text-center text-xs text-slate-400">Protected administrator access · Sessions expire automatically</p></div></section>;
+  function resetTipForm() {
+    setTipForm({ title: '', description: '', category: 'General', active: true });
+    setEditingTip('');
+  }
 
-  return <section className="min-h-[80vh] bg-[#f6f8f7] px-3 py-6 sm:px-6 sm:py-10">
-    <div className="mx-auto max-w-[1500px]">
-      <header className="flex flex-col justify-between gap-5 rounded-3xl bg-slate-950 p-6 text-white shadow-lg sm:p-8 lg:flex-row lg:items-center"><div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Adventure operations</div><h1 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">Booking overview</h1><p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Your reservations, guest schedule, and live booking activity in one place.</p></div><div className="flex flex-wrap items-center gap-2"><span className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold ${liveConnected?'border-emerald-400/30 bg-emerald-400/10 text-emerald-200':'border-amber-300/30 bg-amber-300/10 text-amber-100'}`}><Radio className="h-4 w-4" />{liveConnected?'Live updates connected':'Live updates offline'}</span><button onClick={()=>{setNewBookingCount(0);loadBookings(token)}} className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold transition hover:bg-white/20"><RefreshCw className={`h-4 w-4 ${loading?'animate-spin':''}`} /> Refresh</button><button onClick={logout} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-900 transition hover:bg-rose-100"><LogOut className="h-4 w-4" /> Sign out</button></div></header>
+  function editTip(tip) {
+    setTipForm({
+      title: tip.title,
+      description: tip.description,
+      category: tip.category || 'General',
+      active: tip.active,
+    });
+    setEditingTip(tip._id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
-      {error && <div role="alert" className="mt-5 flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total reservations" value={bookings.length} note="All booking requests received" icon={CalendarDays} tone="blue" /><StatCard label="Awaiting review" value={count('pending')} note="Needs availability confirmation" icon={Clock3} tone="amber" /><StatCard label="Confirmed trips" value={count('confirmed')} note="Reservations approved by staff" icon={CalendarCheck2} tone="emerald" /><StatCard label="Guests scheduled" value={guests} note={`${upcoming} upcoming reservation${upcoming===1?'':'s'}`} icon={Users} tone="rose" /></div>
+  async function saveTip(event) {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      await apiRequest(editingTip ? `/api/tips/${editingTip}` : '/api/tips', {
+        method: editingTip ? 'PATCH' : 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify(tipForm),
+      });
+      await loadTips();
+      resetTipForm();
+      showToast?.(editingTip ? 'Booking tip updated.' : 'Booking tip created.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="min-w-0 rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-6">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">Reservation manager</p><h2 className="mt-1 text-xl font-extrabold text-slate-900">All bookings <span className="font-semibold text-slate-400">({visible.length})</span></h2></div><div className="flex flex-wrap gap-2"><button onClick={()=>exportCsv(visible)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"><Download className="h-4 w-4" /> Export CSV</button>{newBookingCount>0 && <span className="inline-flex items-center gap-1 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800"><Bell className="h-3.5 w-3.5" />{newBookingCount} new</span>}</div></div>
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(180px,1.3fr)_minmax(160px,1fr)_minmax(130px,.8fr)]"><label className="relative block"><Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search name, email, phone…" aria-label="Search bookings" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-50" /></label><label className="relative"><SlidersHorizontal className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><select aria-label="Filter by adventure" value={adventureFilter} onChange={e=>setAdventureFilter(e.target.value)} className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-8 text-sm text-slate-700 outline-none focus:border-emerald-500"><option value="all">All adventures</option>{adventures.map(a=><option key={a}>{a}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></label><label className="relative"><select aria-label="Sort bookings" value={sort} onChange={e=>setSort(e.target.value)} className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 pr-8 text-sm text-slate-700 outline-none focus:border-emerald-500"><option value="newest">Newest received</option><option value="oldest">Oldest received</option><option value="date">Trip date: soonest</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></label></div>
-          <div className="mt-4 flex flex-wrap gap-2">{[['all','All'],['pending','Pending'],['confirmed','Confirmed'],['cancelled','Cancelled']].map(([value,label])=><button key={value} onClick={()=>setFilter(value)} className={`rounded-full px-4 py-2 text-xs font-bold transition ${filter===value?'bg-slate-950 text-white shadow-sm':'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{label}{value==='all'?` · ${bookings.length}`:` · ${count(value)}`}</button>)}<span className="mx-1 hidden h-7 w-px bg-slate-200 sm:block" />{[['all','Any trip date'],['upcoming','Upcoming'],['today','Today'],['past','Past trips']].map(([value,label])=><button key={value} onClick={()=>setDateFilter(value)} className={`rounded-full px-3 py-2 text-xs font-semibold transition ${dateFilter===value?'bg-emerald-100 text-emerald-800':'text-slate-500 hover:bg-slate-100'}`}>{label}</button>)}</div>
-          <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-100"><table className="w-full min-w-[980px] border-collapse text-left"><thead><tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500"><th className="px-4 py-3 font-bold">Guest</th><th className="px-4 py-3 font-bold">Adventure</th><th className="px-4 py-3 font-bold">Trip date</th><th className="px-4 py-3 font-bold">Guests</th><th className="px-4 py-3 font-bold">Status</th><th className="px-4 py-3 font-bold">Payment</th><th className="px-4 py-3 text-right font-bold">Details</th></tr></thead><tbody className="divide-y divide-slate-100">{visible.map(b=><tr key={b._id} className="transition hover:bg-slate-50/80"><td className="px-4 py-4"><div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-sm font-extrabold text-emerald-800">{(b.customerName||'?').split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase()}</span><div className="min-w-0"><p className="max-w-[190px] truncate text-sm font-bold text-slate-900">{b.customerName}</p><p className="max-w-[190px] truncate text-xs text-slate-500">{b.email}</p></div></div></td><td className="px-4 py-4"><span className="block max-w-[180px] text-sm font-semibold text-slate-700">{b.adventure}</span><span className="mt-1 block text-[11px] text-slate-400">#{String(b._id).slice(-8).toUpperCase()}</span></td><td className="px-4 py-4"><p className="text-sm font-semibold text-slate-800">{dateLabel(b.bookingDate)}</p><p className="mt-1 text-xs text-slate-400">Received {dateTimeLabel(b.createdAt)}</p></td><td className="px-4 py-4"><span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700"><Users className="h-3.5 w-3.5" />{b.guests}</span></td><td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1.5 text-xs font-bold capitalize ring-1 ring-inset ${statusStyles[b.status] || statusStyles.pending}`}>{b.status}</span></td><td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1.5 text-xs font-bold capitalize ring-1 ring-inset ${paymentStyles[b.paymentStatus] || paymentStyles.not_configured}`}>{(b.paymentStatus || 'not configured').replace('_', ' ')}</span><p className="mt-1 text-xs font-semibold text-slate-600">{moneyLabel(b)}</p></td><td className="px-4 py-4 text-right"><button onClick={()=>setSelected(b)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800">View details <ArrowUpRight className="ml-1 inline h-3.5 w-3.5" /></button></td></tr>)}</tbody></table>{visible.length===0 && <div className="px-5 py-16 text-center"><CalendarDays className="mx-auto h-9 w-9 text-slate-300" /><h3 className="mt-3 font-bold text-slate-800">No matching reservations</h3><p className="mt-1 text-sm text-slate-500">Try changing the search or filters.</p><button onClick={()=>{setQuery('');setFilter('all');setAdventureFilter('all');setDateFilter('all')}} className="mt-4 text-sm font-bold text-emerald-700 hover:underline">Clear all filters</button></div>}</div>
-          <p className="mt-3 text-xs text-slate-400">Showing {visible.length} of {bookings.length} reservations · Changes are synced with the server.</p>
+  async function deleteTip(tip) {
+    if (!window.confirm(`Delete "${tip.title}"?`)) return;
+    setError('');
+    try {
+      await apiRequest(`/api/tips/${tip._id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setTips(current => current.filter(item => item._id !== tip._id));
+      if (editingTip === tip._id) resetTipForm();
+      showToast?.('Booking tip deleted.');
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function saveAdminProfile(event) {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const data = await apiRequest('/api/auth/admin/profile', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify(profile),
+      });
+      setProfile(data.profile);
+      showToast?.(data.message);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function logout() {
+    sessionStorage.removeItem(adminTokenKey);
+    setToken('');
+    setBookings([]);
+    setTips([]);
+    setProfile({ email: '', name: '', phone: '' });
+    setSection('bookings');
+  }
+
+  const visibleBookings = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const now = new Date();
+    return bookings
+      .filter(booking => {
+        if (statusFilter !== 'all' && booking.status !== statusFilter) return false;
+        if (adventureFilter !== 'all' && booking.adventure !== adventureFilter) return false;
+        if (needle && ![booking.customerName, booking.email, booking.phone, booking.adventure, booking._id]
+          .some(value => String(value || '').toLowerCase().includes(needle))) return false;
+        if (dateFilter !== 'all') {
+          const date = new Date(booking.bookingDate);
+          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+          if (dateFilter === 'upcoming' && (day < today || booking.status === 'cancelled')) return false;
+          if (dateFilter === 'past' && day >= today) return false;
+          if (dateFilter === 'today' && day.getTime() !== today.getTime()) return false;
+        }
+        return true;
+      })
+      .sort((a, b) =>
+        sort === 'date'
+          ? new Date(a.bookingDate) - new Date(b.bookingDate)
+          : sort === 'oldest'
+            ? new Date(a.createdAt) - new Date(b.createdAt)
+            : new Date(b.createdAt) - new Date(a.createdAt),
+      );
+  }, [bookings, query, statusFilter, adventureFilter, dateFilter, sort]);
+  const pendingCount = bookings.filter(item => item.status === 'pending').length;
+  const confirmedCount = bookings.filter(item => item.status === 'confirmed').length;
+  const paidCount = bookings.filter(item => item.paymentStatus === 'paid').length;
+  const nextBookings = [...bookings]
+    .filter(item => item.status !== 'cancelled' && new Date(item.bookingDate) >= new Date(new Date().setHours(0, 0, 0, 0)))
+    .sort((a, b) => new Date(a.bookingDate) - new Date(b.bookingDate))
+    .slice(0, 4);
+
+  if (!token) {
+    return (
+      <section className="relative min-h-[75vh] overflow-hidden bg-slate-950 px-4 py-16 sm:py-24">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-emerald-900/40 via-slate-950 to-slate-950" />
+        <div className="relative mx-auto max-w-md rounded-3xl bg-white p-7 shadow-2xl sm:p-9">
+          <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"><ShieldCheck className="h-7 w-7" /></div>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">Private operations</p>
+          <h1 className="mt-2 text-3xl font-extrabold text-slate-900">Welcome back.</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">Sign in to manage reservations, booking tips, and your profile.</p>
+          <form className="mt-7 space-y-4" onSubmit={handleLogin}>
+            <label className="block text-sm font-semibold text-slate-700">Admin email<input type="email" required autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} className={inputClass} /></label>
+            <label className="block text-sm font-semibold text-slate-700">Password<input type="password" required autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} className={inputClass} /></label>
+            {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+            <button disabled={loading} className="w-full rounded-xl bg-slate-950 px-5 py-3.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60">{loading ? 'Signing in…' : 'Sign in securely'}</button>
+          </form>
+          <p className="mt-6 text-center text-xs text-slate-400">Protected administrator access · Sessions expire automatically</p>
         </div>
+      </section>
+    );
+  }
 
-        <aside className="space-y-5"><div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm"><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">On the calendar</p><h2 className="mt-1 text-lg font-extrabold text-slate-900">Upcoming trips</h2></div><span className="rounded-xl bg-emerald-50 p-2.5 text-emerald-700"><CalendarCheck2 className="h-5 w-5" /></span></div><p className="mt-1 text-sm text-slate-500">Next scheduled reservations</p><div className="mt-4 space-y-3">{nextBookings.map(b=><button key={b._id} onClick={()=>setSelected(b)} className="flex w-full items-start gap-3 rounded-2xl border border-slate-100 p-3 text-left transition hover:border-emerald-200 hover:bg-emerald-50/40"><div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl bg-slate-950 text-white"><span className="text-[10px] font-bold uppercase text-emerald-300">{new Date(b.bookingDate).toLocaleDateString(undefined,{month:'short'})}</span><span className="text-lg font-extrabold leading-5">{new Date(b.bookingDate).getDate()}</span></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-900">{b.adventure}</p><p className="mt-0.5 truncate text-xs text-slate-500">{b.customerName} · {b.guests} guest{b.guests===1?'':'s'}</p><span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold capitalize ring-1 ring-inset ${statusStyles[b.status]}`}>{b.status}</span></div></button>)}{nextBookings.length===0 && <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center"><CalendarDays className="mx-auto h-7 w-7 text-slate-300" /><p className="mt-2 text-sm font-semibold text-slate-600">Nothing scheduled yet</p><p className="mt-1 text-xs text-slate-400">Future bookings appear here.</p></div>}</div></div>
-          <div className="rounded-3xl bg-gradient-to-br from-emerald-800 to-teal-950 p-5 text-white shadow-sm"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10"><TrendingUp className="h-5 w-5" /></div><h3 className="mt-4 text-lg font-extrabold">Operations snapshot</h3><p className="mt-1 text-sm leading-6 text-emerald-100/80">Use this view to prioritize pending requests, confirm availability, and keep trip schedules up to date.</p><div className="mt-5 grid grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs text-emerald-100/70">Pending</p><p className="mt-1 text-2xl font-extrabold">{count('pending')}</p></div><div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs text-emerald-100/70">Guests</p><p className="mt-1 text-2xl font-extrabold">{guests}</p></div></div><p className="mt-4 flex items-center gap-2 text-xs text-emerald-100/70"><CircleDollarSign className="h-4 w-4" /> Paid reservations and payment exceptions are shown in each booking's details.</p></div>
+  const nav = [
+    { id: 'bookings', label: 'Bookings', icon: CalendarDays },
+    { id: 'tips', label: 'Booking tips', icon: Sparkles },
+    { id: 'profile', label: 'Admin profile', icon: UserRound },
+  ];
+
+  return (
+    <section className="min-h-[80vh] bg-[#f6f8f7] px-3 py-6 sm:px-6 sm:py-10">
+      <div className="mx-auto grid max-w-[1500px] gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
+        <aside className="h-fit rounded-3xl bg-slate-950 p-5 text-white">
+          <div className="flex items-center gap-3 border-b border-white/10 pb-5">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-200"><ShieldCheck className="h-6 w-6" /></span>
+            <div><p className="text-sm font-bold">Adventure ops</p><p className="text-xs text-slate-400">Administrator</p></div>
+          </div>
+          <nav className="mt-4 space-y-1">
+            {nav.map(item => (
+              <button key={item.id} onClick={() => { setSection(item.id); setError(''); }} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition ${section === item.id ? 'bg-white text-slate-950' : 'text-slate-300 hover:bg-white/10'}`}>
+                <item.icon className="h-4 w-4" />{item.label}
+              </button>
+            ))}
+          </nav>
+          <div className="mt-5 flex items-center gap-2 rounded-xl border border-white/10 px-3 py-3 text-xs">
+            <Radio className={`h-4 w-4 ${liveConnected ? 'text-emerald-300' : 'text-amber-300'}`} />
+            {liveConnected ? 'Live updates connected' : 'Live updates offline'}
+          </div>
+          <button onClick={logout} className="mt-3 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-300 hover:bg-rose-500/15 hover:text-rose-200"><LogOut className="h-4 w-4" /> Sign out</button>
         </aside>
-      </div>
-    </div>
 
-    {selected && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Booking details" onMouseDown={e=>{if(e.target===e.currentTarget)setSelected(null)}}><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"><div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-100 bg-white/95 p-5 backdrop-blur sm:p-6"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">Reservation details</p><h2 className="mt-1 text-2xl font-extrabold text-slate-900">{selected.customerName}</h2><p className="mt-1 text-xs text-slate-400">Reference #{String(selected._id).slice(-8).toUpperCase()}</p></div><button onClick={()=>setSelected(null)} aria-label="Close details" className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button></div><div className="space-y-5 p-5 sm:p-6"><div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-50 p-4"><div><p className="text-xs font-semibold text-slate-500">Requested adventure</p><p className="mt-1 font-extrabold text-slate-900">{selected.adventure}</p></div><span className={`rounded-full px-3 py-1.5 text-xs font-bold capitalize ring-1 ring-inset ${statusStyles[selected.status]}`}>{selected.status}</span></div><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-2xl border border-slate-100 p-4"><Mail className="h-4 w-4 text-emerald-700" /><p className="mt-3 text-xs text-slate-400">Email address</p><a className="mt-1 block break-all text-sm font-semibold text-slate-800 hover:text-emerald-700" href={`mailto:${selected.email}`}>{selected.email}</a></div><div className="rounded-2xl border border-slate-100 p-4"><Phone className="h-4 w-4 text-emerald-700" /><p className="mt-3 text-xs text-slate-400">Phone number</p><a className="mt-1 block text-sm font-semibold text-slate-800 hover:text-emerald-700" href={`tel:${selected.phone}`}>{selected.phone}</a></div><div className="rounded-2xl border border-slate-100 p-4"><CalendarDays className="h-4 w-4 text-emerald-700" /><p className="mt-3 text-xs text-slate-400">Trip date</p><p className="mt-1 text-sm font-semibold text-slate-800">{dateLabel(selected.bookingDate)}</p></div><div className="rounded-2xl border border-slate-100 p-4"><Users className="h-4 w-4 text-emerald-700" /><p className="mt-3 text-xs text-slate-400">Group size</p><p className="mt-1 text-sm font-semibold text-slate-800">{selected.guests} guest{selected.guests===1?'':'s'}</p></div><div className="rounded-2xl border border-slate-100 p-4 sm:col-span-2"><Clock3 className="h-4 w-4 text-emerald-700" /><p className="mt-3 text-xs text-slate-400">Request received</p><p className="mt-1 text-sm font-semibold text-slate-800">{dateTimeLabel(selected.createdAt)}</p></div><div className="rounded-2xl border border-slate-100 p-4 sm:col-span-2"><CircleDollarSign className="h-4 w-4 text-emerald-700" /><p className="mt-3 text-xs text-slate-400">Payment</p><div className="mt-1 flex flex-wrap items-center gap-2"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold capitalize ring-1 ring-inset ${paymentStyles[selected.paymentStatus] || paymentStyles.not_configured}`}>{(selected.paymentStatus || 'not configured').replace('_', ' ')}</span><strong className="text-sm text-slate-900">{moneyLabel(selected)}</strong></div><p className="mt-2 text-xs text-slate-500">Gateway: <span className="font-semibold uppercase">{selected.paymentGateway || 'Not selected'}</span></p><p className="mt-2 break-all text-xs text-slate-500">Transaction: {selected.transactionId || 'Not started'}</p>{selected.bankTransactionId && <p className="mt-1 break-all text-xs text-slate-500">Bank reference: {selected.bankTransactionId}</p>}{selected.paidAt && <p className="mt-1 text-xs text-emerald-700">Paid at {dateTimeLabel(selected.paidAt)}</p>}</div></div><div className="rounded-2xl border border-slate-100 p-4"><div className="flex items-center gap-2"><MessageSquareText className="h-4 w-4 text-emerald-700" /><p className="text-sm font-bold text-slate-800">Customer message</p></div><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{selected.message || 'No additional message was provided.'}</p></div><div className="border-t border-slate-100 pt-5"><label className="block text-sm font-bold text-slate-800">Update reservation status<select value={selected.status} onChange={e=>updateStatus(selected._id,e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold capitalize outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50">{['pending','confirmed','cancelled'].map(s=><option key={s} value={s}>{s}</option>)}</select></label><p className="mt-2 text-xs leading-5 text-slate-400">Confirm only after checking capacity and availability. Cancelling here updates the reservation status; contact the customer separately.</p><button onClick={()=>setSelected(null)} className="mt-4 w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-800">Done</button></div></div></div></div>}
-  </section>;
+        <main className="min-w-0">
+          <header className="flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-slate-950 p-6 text-white shadow-lg sm:p-8">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Adventure operations</div>
+              <h1 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">{nav.find(item => item.id === section)?.label}</h1>
+              <p className="mt-2 text-sm text-slate-300">{section === 'bookings' ? 'Manage reservations, guest schedules, and payment status.' : section === 'tips' ? 'Create and maintain helpful customer booking tips.' : 'Manage the administrator contact profile.'}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {newBookingCount > 0 && <span className="inline-flex items-center gap-1 rounded-xl bg-emerald-400/15 px-3 py-2.5 text-xs font-bold text-emerald-100"><Bell className="h-4 w-4" />{newBookingCount} new</span>}
+              <button onClick={refresh} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold hover:bg-white/20 disabled:opacity-60"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
+            </div>
+          </header>
+          {error && <div role="alert" className="mt-4 flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
+
+          {section === 'bookings' && (
+            <>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <Stat icon={LayoutDashboard} label="Reservations" value={bookings.length} note="All booking requests" />
+                <Stat icon={CalendarDays} label="Awaiting review" value={pendingCount} note="Needs availability confirmation" />
+                <Stat icon={CheckCircle2} label="Confirmed trips" value={confirmedCount} note="Approved by staff" />
+                <Stat icon={CircleDollarSign} label="Payments received" value={paidCount} note="Verified payments" />
+              </div>
+              <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-5 sm:p-6">
+                  <div><p className="text-xs font-bold uppercase tracking-[0.15em] text-emerald-700">Reservation manager</p><h2 className="mt-1 text-xl font-extrabold text-slate-900">All bookings</h2></div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => exportCsv(visibleBookings)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Download className="h-4 w-4" /> Export</button>
+                    <label className="relative block w-full sm:w-56"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search bookings…" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-emerald-500" /></label>
+                  </div>
+                </div>
+                <div className="grid gap-2 border-b border-slate-100 bg-slate-50/60 p-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <label className="relative"><SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><select aria-label="Filter by status" value={statusFilter} onChange={event => setStatusFilter(event.target.value)} className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-8 text-sm"><option value="all">All statuses</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="cancelled">Cancelled</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></label>
+                  <label className="relative"><select aria-label="Filter by adventure" value={adventureFilter} onChange={event => setAdventureFilter(event.target.value)} className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm"><option value="all">All adventures</option>{adventures.map(adventure => <option key={adventure}>{adventure}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></label>
+                  <label className="relative"><select aria-label="Filter by trip date" value={dateFilter} onChange={event => setDateFilter(event.target.value)} className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm"><option value="all">All dates</option><option value="today">Today</option><option value="upcoming">Upcoming</option><option value="past">Past</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></label>
+                  <label className="relative"><select aria-label="Sort bookings" value={sort} onChange={event => setSort(event.target.value)} className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm"><option value="newest">Newest received</option><option value="oldest">Oldest received</option><option value="date">Trip date: soonest</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></label>
+                </div>
+                {visibleBookings.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[780px] text-left text-sm">
+                      <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500"><tr><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Adventure</th><th className="px-5 py-3">Date / guests</th><th className="px-5 py-3">Payment</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Update</th></tr></thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {visibleBookings.map(booking => (
+                          <tr key={booking._id} onClick={() => setSelectedBooking(booking)} className="align-top cursor-pointer hover:bg-slate-50">
+                            <td className="px-5 py-4"><p className="font-bold text-slate-900">{booking.customerName}</p><p className="mt-1 text-xs text-slate-500">{booking.email}</p><p className="text-xs text-slate-500">{booking.phone}</p></td>
+                            <td className="px-5 py-4 font-medium text-slate-700">{booking.adventure}</td>
+                            <td className="px-5 py-4 text-slate-600">{new Date(booking.bookingDate).toLocaleDateString()}<p className="mt-1 text-xs">{booking.guests} guest{booking.guests === 1 ? '' : 's'}</p></td>
+                            <td className="px-5 py-4"><span className="capitalize text-slate-700">{(booking.paymentStatus || 'not configured').replace('_', ' ')}</span><p className="mt-1 text-xs text-slate-500">{booking.paymentAmount == null ? '—' : new Intl.NumberFormat(undefined, { style: 'currency', currency: booking.paymentCurrency || 'USD' }).format(booking.paymentAmount)}</p></td>
+                            <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold capitalize ${statusClass[booking.status] || 'bg-slate-100 text-slate-600'}`}>{booking.status}</span></td>
+                            <td className="px-5 py-4"><select aria-label={`Update status for ${booking.customerName}`} value={booking.status} onClick={event => event.stopPropagation()} onChange={event => updateBookingStatus(booking._id, event.target.value)} className="rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-semibold text-slate-700"><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="cancelled">Cancelled</option></select></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <p className="p-8 text-center text-sm text-slate-500">{bookings.length ? 'No bookings match your search.' : 'No booking requests yet.'}</p>}
+              </div>
+              <div className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center gap-2"><Clock3 className="h-5 w-5 text-emerald-700" /><h2 className="font-extrabold text-slate-900">Upcoming reservations</h2></div>
+                {nextBookings.length ? <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{nextBookings.map(booking => <button key={booking._id} onClick={() => setSelectedBooking(booking)} className="rounded-2xl border border-slate-100 p-4 text-left hover:border-emerald-200 hover:bg-emerald-50/40"><p className="font-bold text-slate-900">{booking.customerName}</p><p className="mt-1 text-xs text-slate-500">{booking.adventure}</p><p className="mt-2 text-xs font-semibold text-emerald-800">{dateLabel(booking.bookingDate)} · {booking.guests} guests</p></button>)}</div> : <p className="mt-3 text-sm text-slate-500">No upcoming trips are scheduled.</p>}
+              </div>
+            </>
+          )}
+
+          {section === 'tips' && (
+            <div className="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(280px,.8fr)_minmax(0,1.2fr)]">
+              <form onSubmit={saveTip} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="flex items-center justify-between gap-2">
+                  <div><p className="text-xs font-bold uppercase tracking-[0.15em] text-emerald-700">{editingTip ? 'Edit tip' : 'New tip'}</p><h2 className="mt-1 text-xl font-extrabold text-slate-900">{editingTip ? 'Update booking tip' : 'Create booking tip'}</h2></div>
+                  {editingTip && <button type="button" aria-label="Cancel editing" onClick={resetTipForm} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X className="h-4 w-4" /></button>}
+                </div>
+                <label className="mt-5 block text-sm font-semibold text-slate-700">Title<input className={inputClass} required maxLength={120} value={tipForm.title} onChange={event => setTipForm({ ...tipForm, title: event.target.value })} /></label>
+                <label className="mt-4 block text-sm font-semibold text-slate-700">Category<input className={inputClass} required maxLength={60} value={tipForm.category} onChange={event => setTipForm({ ...tipForm, category: event.target.value })} /></label>
+                <label className="mt-4 block text-sm font-semibold text-slate-700">Description<textarea className={inputClass} required maxLength={1000} rows={5} value={tipForm.description} onChange={event => setTipForm({ ...tipForm, description: event.target.value })} /></label>
+                <label className="mt-4 flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={tipForm.active} onChange={event => setTipForm({ ...tipForm, active: event.target.checked })} className="h-4 w-4 accent-emerald-700" />Show to customers</label>
+                <div className="mt-5 flex gap-2">
+                  <button disabled={loading} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"><Plus className="h-4 w-4" />{editingTip ? 'Save changes' : 'Create tip'}</button>
+                  {editingTip && <button type="button" onClick={resetTipForm} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>}
+                </div>
+              </form>
+              <div className="space-y-3">
+                {tips.length ? tips.map(tip => (
+                  <article key={tip._id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold uppercase tracking-wider text-emerald-700">{tip.category}</span><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${tip.active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{tip.active ? 'Visible' : 'Hidden'}</span></div>
+                        <h3 className="mt-2 font-bold text-slate-900">{tip.title}</h3>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{tip.description}</p>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button onClick={() => editTip(tip)} aria-label={`Edit ${tip.title}`} className="rounded-lg p-2 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"><Pencil className="h-4 w-4" /></button>
+                        <button onClick={() => deleteTip(tip)} aria-label={`Delete ${tip.title}`} className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-700"><Trash2 className="h-4 w-4" /></button>
+                      </div>
+                    </div>
+                  </article>
+                )) : <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center"><Sparkles className="mx-auto h-7 w-7 text-slate-400" /><p className="mt-3 font-semibold text-slate-700">No booking tips created</p><p className="mt-1 text-sm text-slate-500">Use the form to publish helpful advice to customers.</p></div>}
+              </div>
+            </div>
+          )}
+
+          {section === 'profile' && (
+            <form onSubmit={saveAdminProfile} className="mt-5 max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+              <div className="mb-6 flex items-center gap-3"><span className="rounded-xl bg-emerald-50 p-3 text-emerald-700"><Users className="h-5 w-5" /></span><div><h2 className="font-extrabold text-slate-900">Administrator profile</h2><p className="text-sm text-slate-500">Manage the contact details associated with this admin account.</p></div></div>
+              <label className="block text-sm font-semibold text-slate-700">Account email<input className={`${inputClass} bg-slate-50 text-slate-500`} value={profile.email} readOnly /></label>
+              <label className="mt-4 block text-sm font-semibold text-slate-700">Display name<input className={inputClass} maxLength={100} value={profile.name} onChange={event => setProfile({ ...profile, name: event.target.value })} /></label>
+              <label className="mt-4 block text-sm font-semibold text-slate-700">Contact phone<input className={inputClass} maxLength={30} value={profile.phone} onChange={event => setProfile({ ...profile, phone: event.target.value })} /></label>
+              <p className="mt-4 text-xs leading-5 text-slate-500">Admin sign-in credentials are managed in the server environment and cannot be changed here.</p>
+              <button disabled={loading} className="mt-5 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60">Save profile</button>
+            </form>
+          )}
+          {selectedBooking && section === 'bookings' && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setSelectedBooking(null)}>
+              <div role="dialog" aria-modal="true" aria-labelledby="booking-detail-title" className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl sm:p-8" onClick={event => event.stopPropagation()}>
+                <div className="flex items-start justify-between gap-4">
+                  <div><p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Booking reference {String(selectedBooking._id).slice(-8).toUpperCase()}</p><h2 id="booking-detail-title" className="mt-2 text-2xl font-extrabold text-slate-900">{selectedBooking.customerName}</h2></div>
+                  <button aria-label="Close booking details" onClick={() => setSelectedBooking(null)} className="rounded-full p-2 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+                </div>
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <p className="flex items-center gap-2 text-sm text-slate-600"><Mail className="h-4 w-4 text-emerald-700" />{selectedBooking.email}</p>
+                  <p className="flex items-center gap-2 text-sm text-slate-600"><Phone className="h-4 w-4 text-emerald-700" />{selectedBooking.phone}</p>
+                  <p className="flex items-center gap-2 text-sm text-slate-600"><CalendarCheck2 className="h-4 w-4 text-emerald-700" />{dateLabel(selectedBooking.bookingDate)} · {selectedBooking.guests} guests</p>
+                  <p className="flex items-center gap-2 text-sm text-slate-600"><CircleDollarSign className="h-4 w-4 text-emerald-700" />{selectedBooking.paymentStatus || 'not configured'} · {selectedBooking.paymentAmount == null ? '—' : new Intl.NumberFormat(undefined, { style: 'currency', currency: selectedBooking.paymentCurrency || 'USD' }).format(selectedBooking.paymentAmount)}</p>
+                </div>
+                <p className="mt-4 text-sm font-semibold text-slate-800">{selectedBooking.adventure}</p>
+                <div className="mt-4 rounded-2xl bg-slate-50 p-4"><p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500"><MessageSquareText className="h-4 w-4" />Customer message</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{selectedBooking.message || 'No message provided.'}</p></div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    </section>
+  );
 }

@@ -5,6 +5,7 @@ dns.setServers(['8.8.8.8', '8.8.4.4']);
 const express = require('express');
 const crypto = require('crypto');
 const Booking = require('../models/Booking');
+const userAuth = require('../middleware/userAuth');
 
 const router = express.Router();
 const USD_PRICES = Object.freeze({
@@ -22,17 +23,8 @@ const sslEnabled = () =>
     process.env.PAYMENT_CALLBACK_BASE_URL &&
     process.env.CLIENT_URL,
   );
-const verifoneEnabled = () =>
-  Boolean(
-    process.env.VERIFONE_API_USER_ID &&
-    process.env.VERIFONE_API_KEY &&
-    process.env.VERIFONE_ENTITY_ID &&
-    process.env.VERIFONE_PAYMENT_CONTRACT_ID &&
-    process.env.PAYMENT_CALLBACK_BASE_URL &&
-    process.env.CLIENT_URL,
-  );
 const paymentEnabledFor = country =>
-  country === 'BD' ? sslEnabled() : verifoneEnabled();
+  country === 'BD' && sslEnabled();
 const baseUrl = () => (process.env.SSLCOMMERZ_MODE === 'live' ? LIVE : SANDBOX);
 const roundMoney = value =>
   Math.round((Number(value) + Number.EPSILON) * 100) / 100;
@@ -63,7 +55,6 @@ function getQuote(adventure, guests, billingCountry) {
     usdToBdtRate: rate,
     equivalentBDT,
     payable,
-    paymentProvider: billingCountry === 'BD' ? 'sslcommerz' : 'verifone',
   };
 }
 function redirectToClient(res, status, bookingId) {
@@ -251,156 +242,22 @@ router.post('/ipn', async (req, res) => {
   }
 });
 
-// Verifone Hosted Payments Page (international USD bookings). Customer is redirected to a provider-hosted page.
-router.post('/verifone/webhook', async (req, res) => {
-  try {
-    const signature = req.get('x-vfi-jws');
-    const jwksUrl =
-      process.env.VERIFONE_JWKS_URL ||
-      (process.env.VERIFONE_MODE === 'live'
-        ? ''
-        : 'https://vf11gtostorage1.blob.core.windows.net/test-webhook-sign-keys/test-webhook-sign-keys.jwks');
-    if (!signature || !jwksUrl)
-      return res
-        .status(401)
-        .send('Missing Verifone webhook signature configuration');
-    const parts = signature.split('.');
-    if (parts.length !== 3 || parts[1] !== '')
-      return res.status(401).send('Invalid detached webhook signature');
-    const protectedHeader = JSON.parse(
-      Buffer.from(parts[0], 'base64url').toString('utf8'),
-    );
-    const kid = protectedHeader.kid;
-    const alg = protectedHeader.alg;
-    if (
-      !kid ||
-      !['RS256', 'ES256'].includes(alg) ||
-      protectedHeader.b64 !== false
-    )
-      return res.status(401).send('Unsupported webhook signature');
-    const keysResponse = await fetch(jwksUrl, {
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!keysResponse.ok)
-      throw new Error('Could not load Verifone webhook public keys');
-    const jwks = await keysResponse.json();
-    const jwk = (jwks.keys || []).find(
-      k => k.kid === kid && (!k.alg || k.alg === alg),
-    );
-    if (!jwk) return res.status(401).send('Unknown Verifone signing key');
-    const bodyText = canonicalizeJson(req.body);
-    const signingInput = Buffer.concat([
-      Buffer.from(`${parts[0]}.`, 'utf8'),
-      Buffer.from(bodyText, 'utf8'),
-    ]);
-    const publicKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
-    const sig = Buffer.from(parts[2], 'base64url');
-    const verify = crypto.createVerify('SHA256');
-    verify.update(signingInput);
-    verify.end();
-    const validSignature =
-      alg === 'ES256'
-        ? verify.verify({ key: publicKey, dsaEncoding: 'ieee-p1363' }, sig)
-        : verify.verify(publicKey, sig);
-    if (!validSignature)
-      return res.status(401).send('Invalid Verifone webhook signature');
-
-    const event = req.body || {};
-    const content = event.content || {};
-    const reference = String(content.merchant_reference || '');
-    if (!reference) return res.status(400).send('Missing merchant reference');
-    const booking = await Booking.findOne({
-      transactionId: reference,
-      paymentGateway: 'verifone',
-    });
-    if (!booking) return res.status(404).send('Booking not found');
-    const currency = String(content.currency_code || '').toUpperCase();
-    const amount = Number(content.amount);
-    if (
-      currency !== booking.paymentCurrency ||
-      !Number.isFinite(amount) ||
-      Math.abs(amount - booking.paymentAmount) > 0.02
-    ) {
-      booking.paymentStatus = 'review';
-      booking.paymentUpdatedAt = new Date();
-      await booking.save();
-      return res.status(400).send('Payment amount or currency mismatch');
-    }
-    const status = String(content.transaction_status || '').toUpperCase();
-    const paidStatuses = new Set([
-      'AUTHORISED',
-      'CAPTURED',
-      'SETTLED',
-      'SETTLEMENT_REQUESTED',
-      'SETTLEMENT_SUBMITTED',
-      'SETTLEMENT_COMPLETED',
-    ]);
-    const failedStatuses = new Set([
-      'FAILED',
-      'DECLINED',
-      'CANCELLED',
-      'REJECTED',
-    ]);
-    if (paidStatuses.has(status) && booking.paymentStatus !== 'paid') {
-      booking.paymentStatus = 'paid';
-      booking.bankTransactionId = String(content.id || event.eventId || '');
-      booking.validationId = String(event.eventId || '');
-      booking.paidAt = new Date();
-      booking.paymentUpdatedAt = new Date();
-      await booking.save();
-      req.app
-        .get('io')
-        ?.to('admins')
-        .emit('payment:updated', {
-          bookingId: String(booking._id),
-          paymentStatus: booking.paymentStatus,
-          paidAt: booking.paidAt,
-        });
-    } else if (failedStatuses.has(status) && booking.paymentStatus !== 'paid') {
-      booking.paymentStatus = 'failed';
-      booking.paymentUpdatedAt = new Date();
-      await booking.save();
-      req.app
-        .get('io')
-        ?.to('admins')
-        .emit('payment:updated', {
-          bookingId: String(booking._id),
-          paymentStatus: booking.paymentStatus,
-        });
-    }
-    return res.status(200).send('Verifone webhook processed');
-  } catch (error) {
-    console.error('Verifone webhook error:', error.message);
-    return res.status(500).send('Webhook processing error');
-  }
-});
-
-function canonicalizeJson(value) {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalizeJson).join(',')}]`;
-  return `{${Object.keys(value)
-    .sort()
-    .map(key => `${JSON.stringify(key)}:${canonicalizeJson(value[key])}`)
-    .join(',')}}`;
-}
-
-router.get('/verifone/return', (req, res) => {
-  // The redirect is not proof of payment. Only a verified signed webhook can mark a booking paid.
-  const status = req.query.error ? 'failed' : 'verification_pending';
-  return redirectToClient(res, status, req.query.bookingId);
-});
-
-router.post('/checkout/:bookingId', async (req, res) => {
+router.post('/checkout/:bookingId', userAuth.optional, async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.bookingId);
     if (!booking)
       return res.status(404).json({ message: 'Booking not found.' });
+    if (req.user && String(booking.userId || '') !== req.user.id)
+      return res.status(403).json({ message: 'You can only pay for your own booking.' });
     const providerEnabled = paymentEnabledFor(booking.billingCountry);
     if (!providerEnabled)
       return res
         .status(503)
         .json({
-          message: `Online payment for ${booking.billingCountry === 'BD' ? 'Bangladesh' : 'international'} customers is not configured yet. Your booking request is saved; please contact the team.`,
+          message:
+            booking.billingCountry === 'BD'
+              ? 'SSLCOMMERZ is not configured yet. Your booking request is saved; please contact the team.'
+              : 'Online payment is currently available only for Bangladesh billing. Your booking request is saved; please contact the team to arrange payment.',
         });
     if (booking.paymentStatus === 'paid')
       return res.status(409).json({ message: 'This booking is already paid.' });
@@ -442,73 +299,9 @@ router.post('/checkout/:bookingId', async (req, res) => {
     booking.usdToBdtRate = quote.usdToBdtRate;
     booking.paymentStatus = 'pending';
     booking.transactionId = tranId;
-    booking.paymentGateway =
-      booking.billingCountry === 'BD' ? 'sslcommerz' : 'verifone';
+    booking.paymentGateway = 'sslcommerz';
     booking.paymentUpdatedAt = new Date();
     await booking.save();
-
-    if (booking.billingCountry === 'INTL') {
-      const apiBase = (
-        process.env.VERIFONE_API_BASE_URL ||
-        (process.env.VERIFONE_MODE === 'live'
-          ? 'https://emea.gsc.verifone.cloud/oidc/checkout-service'
-          : 'https://cst.test-gsc.vfims.com/oidc/checkout-service')
-      ).replace(/\/$/, '');
-      const auth = Buffer.from(
-        `${process.env.VERIFONE_API_USER_ID}:${process.env.VERIFONE_API_KEY}`,
-      ).toString('base64');
-      const payload = {
-        amount: Math.round(quote.amount * 100),
-        currency_code: 'USD',
-        entity_id: process.env.VERIFONE_ENTITY_ID,
-        merchant_reference: tranId,
-        return_url: `${callbackBase}/api/payments/verifone/return?bookingId=${encodeURIComponent(String(booking._id))}`,
-        shop_url: process.env.CLIENT_URL.split(',')[0].trim(),
-        configurations: {
-          card: {
-            mode: 'PAYMENT',
-            payment_contract_id: process.env.VERIFONE_PAYMENT_CONTRACT_ID,
-            authorization_type: 'FINAL_AUTH',
-          },
-        },
-      };
-      const response = await fetch(`${apiBase}/v2/checkout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Basic ${auth}`,
-        },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(15000),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (
-        !response.ok ||
-        !(data.url || data.checkout_url || data.redirect_url)
-      ) {
-        booking.paymentStatus = 'failed';
-        booking.paymentUpdatedAt = new Date();
-        await booking.save();
-        console.error(
-          'Verifone checkout creation failed:',
-          response.status,
-          data.message || data.error || 'Unknown gateway error',
-        );
-        return res
-          .status(502)
-          .json({
-            message:
-              'Verifone could not start checkout. Your booking request is saved; please contact support or try again later.',
-          });
-      }
-      return res.json({
-        checkoutUrl: data.url || data.checkout_url || data.redirect_url,
-        transactionId: tranId,
-        amount: quote.amount,
-        currency: quote.currency,
-        provider: 'verifone',
-      });
-    }
 
     const form = new URLSearchParams({
       store_id: process.env.SSLCOMMERZ_STORE_ID,
